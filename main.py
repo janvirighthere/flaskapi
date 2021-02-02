@@ -1,12 +1,23 @@
 from flask import Flask
-from flask_restful import Api, Resource, abort, reqparse
+from flask_restful import Api, Resource, abort, reqparse, fields, marshal_with
 from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
 api = Api(app)
 app.config['SQLALCHEMY_DATABESE_URI'] = 'sqlite:///database.db'
 db = SQLAlchemy(app)
-db.create_all()
+
+
+class VideoModel(db.Model):
+    __tablename__ = 'video_model'
+    uid = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=True)
+    views = db.Column(db.Integer, nullable=False)
+    likes = db.Column(db.Integer, nullable=False)
+
+    def __repr__(self):
+        return f"Video (name = {self.name}, views {self.views}, likes{self.likes})"
+
 
 video_put_args = reqparse.RequestParser()
 video_put_args.add_argument(
@@ -19,34 +30,34 @@ video_put_args.add_argument(
     "likes", type=int,
     help="Number of likes is requires", required=True)
 
-videos = {}
-
-
-def abort_no_video_id(video_id):
-    if video_id not in videos:
-        abort(404, message="Video does not exist")
-
-
-def abort_video_exists(video_id):
-    if video_id in videos:
-        abort(409, message="The video already exists")
+resource_fields = {
+    'id': fields.Integer,
+    'name': fields.String,
+    'views': fields.Integer,
+    'likes': fields.Integer
+}
 
 
 class Video(Resource):
-
+    @marshal_with(resource_fields)
     def get(self, video_id):
-        abort_no_video_id(video_id)
-        return videos[video_id]
+        result = VideoModel.query.filter_by(id=video_id).first()
+        return result
 
+    @marshal_with(resource_fields)
     def put(self, video_id):
-        abort_video_exists(video_id)
         args = video_put_args.parse_args()
-        videos[video_id] = args
-        return videos[video_id], 201
+        result = VideoModel.query.filter_by(id=video_id).first()
+        if result:
+            abort(409, message="Video id already taken")
+        video = VideoModel(
+            id=video_id, name=args["name"], likes=args["likes"], views=args["views"])
+        db.session.add(video)
+        db.session.commit()
+        return video, 201
 
     def delete(self, video_id):
-        abort_no_video_id(video_id)
-        del videos[video_id]
+
         return '', 204
 
 
